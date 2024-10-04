@@ -1,18 +1,15 @@
 import boto3
 import json
 import requests
-import os
 from datetime import datetime
 from flask_cors import CORS
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 CORS(app)
-
-# AWS clients with region specified
-AWS_REGION = os.environ.get('AWS_REGION', 'ap-south-1')  # Fallback to 'ap-south-1' if not set
-s3 = boto3.client('s3', region_name=AWS_REGION)
-lambda_client = boto3.client('lambda', region_name=AWS_REGION)
+# AWS clients
+s3 = boto3.client('s3')
+lambda_client = boto3.client('lambda')
 
 # API URLs and key
 WEATHER_API_KEY = '97e0978f0194ca2ae82c0bab3532d9aa'  # Replace with your actual API key
@@ -46,9 +43,6 @@ def get_climate_data():
     
     # Fetch air quality data
     air_quality_data = get_air_quality(lat, lon)
-
-    if air_quality_data.get('cod') != 200:
-        return jsonify({"error": "Failed to retrieve air quality data"}), 500
     
     # Aggregate data
     climate_data = {
@@ -61,24 +55,18 @@ def get_climate_data():
 
     # Log data in S3
     file_name = f"{city}_climate_data_{datetime.now().strftime('%Y%m%d%H%M%S')}.json"
-    
-    try:
-        s3.put_object(Bucket=BUCKET_NAME, Key=file_name, Body=json.dumps(climate_data))
-    except Exception as e:
-        return jsonify({"error": f"Failed to log data to S3: {str(e)}"}), 500
+    s3.put_object(Bucket=BUCKET_NAME, Key=file_name, Body=json.dumps(climate_data))
     
     # Trigger AWS Lambda to process the data
-    try:
-        lambda_response = lambda_client.invoke(
-            FunctionName=LAMBDA_FUNCTION_NAME,
-            InvocationType='Event',  # Asynchronous invocation
-            Payload=json.dumps(climate_data)
-        )
-    except Exception as e:
-        return jsonify({"error": f"Failed to invoke Lambda function: {str(e)}"}), 500
+    lambda_response = lambda_client.invoke(
+        FunctionName=LAMBDA_FUNCTION_NAME,
+        InvocationType='Event',  # Asynchronous invocation
+        Payload=json.dumps(climate_data)
+    )
     
     # Return the aggregated climate data
     return jsonify(climate_data)
+
 
 # if __name__ == '__main__':
 #     app.run(debug=True)
